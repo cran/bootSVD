@@ -533,7 +533,7 @@ genBootIndeces<-function(B,n){
 #' svdY<-fastSVD(Y)
 #' DUt<- tcrossprod(diag(svdY$d),svdY$u)
 #' bInds<-genBootIndeces(B=50,n=dim(DUt)[2])
-#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=TRUE)
+#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=interactive())
 bootSVD_LD<-function(UD,DUt=t(UD),bInds=genBootIndeces(B=1000,n=dim(DUt)[2]),K,warning_type='silent',verbose=getOption('verbose'),centerSamples=TRUE){
 	B<-dim(bInds)[1]
 	n<-dim(DUt)[2]
@@ -593,7 +593,7 @@ bootSVD_LD<-function(UD,DUt=t(UD),bInds=genBootIndeces(B=1000,n=dim(DUt)[2]),K,w
 #' svdY<-fastSVD(Y)
 #' DUt<- tcrossprod(diag(svdY$d),svdY$u)
 #' bInds<-genBootIndeces(B=50,n=dim(DUt)[2])
-#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=TRUE)
+#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=interactive())
 #'
 #' Vs<-As2Vs(As=bootSVD_LD_output$As,V=svdY$v)
 #' # Yields the high dimensional bootstrap PCs (left singular 
@@ -601,11 +601,17 @@ bootSVD_LD<-function(UD,DUt=t(UD),bInds=genBootIndeces(B=1000,n=dim(DUt)[2]),K,w
 #' # indexed by b = 1,2...B, where B is the number of bootstrap samples
 As2Vs<-function(AsByB, V, pattern=NULL, ...){
 	B<-length(AsByB)
-	VsByB<-list()
-	DUMP<-mclapply(1:B, FUN=function(b){
-			VsByB[[b]]<<-ffmatrixmult(V,AsByB[[b]],xt=FALSE,yt=FALSE, pattern=paste0(pattern,b,'_'))
-			if('ff' %in% class(VsByB[[b]])) close(VsByB[[b]])
-		},mc.cores=getOption("mc.cores", 1), ...) #default ffmatrixmult uses a random tempfile name to store each matrix (for big matrices).
+
+	bumpUp<-function(b){
+		 	#default ffmatrixmult uses a random tempfile name to store each matrix (for big matrices).
+			out <- ffmatrixmult(V,AsByB[[b]],xt=FALSE,yt=FALSE, pattern=paste0(pattern,b,'_'))
+			if('ff' %in% class(out)) close(out)
+			out
+		}
+
+	VsByB<-mclapply(as.list(1:B), FUN=bumpUp, mc.cores=getOption("mc.cores", 1), ...)
+
+	if(length(VsByB)==0) stop('error using mclappy. Parallelization failed.')
 	return(VsByB)
 }
 
@@ -628,7 +634,7 @@ As2Vs<-function(AsByB, V, pattern=NULL, ...){
 #' V<- svdY$v #original sample PCs
 #' DUt<- tcrossprod(diag(svdY$d),svdY$u)
 #' bInds<-genBootIndeces(B=50,n=dim(DUt)[2])
-#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=TRUE)
+#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=interactive())
 #'
 #' ########
 #' # to get 'low dimensional PC' moments and lower percentiles
@@ -711,7 +717,7 @@ reindexMatricesByK<-function(matricesByB, pattern){
 #' svdY<-fastSVD(Y)
 #' DUt<- tcrossprod(diag(svdY$d),svdY$u)
 #' bInds<-genBootIndeces(B=50,n=dim(DUt)[2])
-#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=TRUE)
+#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=interactive())
 #' 
 #' dsByK<-reindexVectorsByK(bootSVD_LD_output$ds)
 #' 
@@ -753,11 +759,11 @@ reindexVectorsByK<-function(vectorsByB){
 #' V<-svdY$v #right singular vectors of the wide matrix Y
 #' DUt<- tcrossprod(diag(svdY$d),svdY$u)
 #' bInds<-genBootIndeces(B=50,n=dim(DUt)[2])
-#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=TRUE)
+#' bootSVD_LD_output<-bootSVD_LD(DUt=DUt,bInds=bInds,K=3,verbose=interactive())
 #' 
 #' AsByB<-bootSVD_LD_output$As
 #' AsByK<-reindexMatricesByK(AsByB)
-#' moments<-getMomentsAndMomentCI(AsByK,V,verbose=TRUE)
+#' moments<-getMomentsAndMomentCI(AsByK,V,verbose=interactive())
 #' plot(V[,1],type='l',ylim=c(-.1,.1),main='Original PC1, with CI in blue')
 #' matlines(moments$momentCI[[1]],col='blue',lty=1)
 #'
@@ -793,6 +799,7 @@ getMomentsAndMomentCI<-function(AsByK,V,K=length(AsByK),verbose=FALSE){
 }
 
 
+#Note, if VsByB=NULL, it still has 
 getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsByB=NULL,verbose=getOption('verbose')){
 	{i1<-NULL; i2<- NULL} #To avoid errors in R CMD check
 	
@@ -892,7 +899,7 @@ getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsBy
 #' Y<-simEEG(n=100, centered=TRUE, wide=TRUE) 
 #' b<-bootSVD(Y, B=50, K=2, output= 
 #'  	c('initial_SVD', 'HD_moments', 'full_HD_PC_dist',
-#'  	'HD_percentiles'), verbose=TRUE)
+#'  	'HD_percentiles'), verbose=interactive())
 #' 
 #' #explore results
 #' matplot(b$initial_SVD$V[,1:4],type='l',main='Fitted PCs',lty=1)
@@ -960,7 +967,7 @@ getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsBy
 #' pattern_Vb <- paste0(ff_dir,'/Vb_')
 #' bff <- bootSVD(Yff, B=50, K=2, output=c('initial_SVD', 'HD_moments',
 #'  	'full_HD_PC_dist', 'HD_percentiles'), pattern_V= pattern_V,
-#'  	pattern_Vb=pattern_Vb, verbose=TRUE)
+#'  	pattern_Vb=pattern_Vb, verbose=interactive())
 #' 
 #' 
 #' # Note that elements of full_HD_PC_dist and initial_SVD
