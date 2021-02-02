@@ -1,8 +1,12 @@
+# bootstrap PCs are stored as a B-length list of pxK matrices
 # A note on dependencies: 
-	#parallel is used for mclappy, in As2Vs.
 	#ff is used to store large matrices
-		# bootstrap PCs are stored as a B-length list
-		# of pxK matrices
+	#Beyond dependencies in importFrom, see also uses of getOption & attr
+	# When testing examples, try replacing ff with ff::ff; 
+		# as.ff with ff::as.ff; and physical with bit::physical, 
+		# to make sure there are not extra untracked 
+		# ff dependencies being accessed within the bootSVD code.
+
 
 
 
@@ -96,6 +100,7 @@ NULL
 #'
 #'
 #' @export
+#' @importFrom stats rnorm
 #'
 #'
 #' @references
@@ -156,6 +161,7 @@ simEEG<-function(n=100, centered=TRUE, propVarNoise=.45,wide=TRUE){
 #'
 #' @return print(object.size(x),units=units)
 #' @export
+#' @importFrom utils object.size
 #' @examples
 #' Y<-simEEG(n=50)
 #' os(Y)
@@ -185,8 +191,8 @@ os<-function(x,units='Mb') print(object.size(x),units=units)
 #' 
 #' Y<-simEEG(n=100,centered=TRUE,wide=TRUE)
 #' svdY<-fastSVD(Y)
-#' V<-svdY$v #sample PCs for a wide matrix are the right singular vectors
-#' matplot(V[,1:5],type='l',lty=1) #PCs from simulated data
+#' svdY
+#' matplot(svdY$v[,1:5],type='l',lty=1) #sample PCs for a wide matrix are the right singular vectors
 #'
 #' #Note: For a tall, demeaned matrix Y, with columns corresponding 
 #' #to subjects and rows to measurements, 
@@ -196,8 +202,9 @@ os<-function(x,units='Mb') print(object.size(x),units=units)
 #' dev.off()
 #' library(ff)
 #' Yff<-as.ff(Y)
-#' Vff<-fastSVD(Yff)$v
-#' matplot(Vff[,1:5],type='l',lty=1) 
+#' svdYff<-fastSVD(Yff)
+#' svdYff
+#' matplot(svdYff$v[,1:5],type='l',lty=1) 
 fastSVD<-function(A,nv=min(dim(A)),warning_type='silent', center_A=FALSE, pattern=NULL){ 
 	N<-min(dim(A))
 	p<-max(dim(A))
@@ -238,13 +245,35 @@ fastSVD<-function(A,nv=min(dim(A)),warning_type='silent', center_A=FALSE, patter
 	# In svd() convention: A=UDV'
 	# (regardless of whether A is wide or tall)
 	if(!tall){
-		return(list(v=Vp,u=svdAA_NxN$u,d=d)) #U is short, V is long
+		out <-list(v=Vp,u=svdAA_NxN$u,d=d) #U is short, V is long
 	}
 	if(tall){ 
-		return(list(v=svdAA_NxN$u, u=Vp, d=d)) #U is long, V is short
+		out <- list(v=svdAA_NxN$u, u=Vp, d=d) #U is long, V is short
 	}
+	class(out) <- c('fastSVD','list')
 	
+	out
 }
+#' @export
+print.fastSVD <- function(x, ...){
+	k <- min(length(x$d),4)
+	cat(sprintf("SVD of %d by %d matrix\n\n", 
+            nrow(x$u), nrow(x$v)))
+	for(n in names(x)){
+		if('ff' %in% class(x[[n]])) cat(n,'has class:',class(x[[n]]),'\n')
+	}
+
+	cat("\nLeading eigenvalues\n")
+	print(x$d[1:k])
+	cat(sprintf("\nFirst %d rows of first %d columns of u:\n",k,k))
+	print(x$u[1:k,1:k])
+	cat(sprintf("\nFirst %d rows of first %d columns of v:\n",k,k))
+	print(x$v[1:k,1:k])
+	invisible(x)
+}
+
+
+
 
 
 #' Matrix multiplication with "ff_matrix" or "matrix" inputs
@@ -259,7 +288,7 @@ fastSVD<-function(A,nv=min(dim(A)),warning_type='silent', center_A=FALSE, patter
 #' @param override.big.error If the dimension of the final output matrix is especially large, \code{ffmatrixmult} will abort, giving an error. This is meant to avoid the accidental creation of very large matrices. Set override.big.error=TRUE to bypass this error.
 #' @param ... passed to \code{\link{ff}}.
 #' @export
-#' @import ff
+#' @importFrom ff ffapply ff
 #' @return A standard matrix, or a matrix with class \code{ff} if one of the input matrices has class \code{ff}.
 #' @examples \dontrun{
 #'  library(ff)
@@ -390,6 +419,7 @@ ffmatrixmult <- function(x,y=NULL,xt=FALSE,yt=FALSE,ram.output=FALSE, override.b
 #'
 #' @return a random orthonormal (\eqn{n} by \eqn{n}) matrix
 #' @export
+#' @importFrom stats rnorm
 #'
 #' @examples
 #' A<-genQ(3)
@@ -525,7 +555,8 @@ genBootIndeces<-function(B,n){
 #'	\item{time}{The computation time required for the procedure, taken using \code{\link{system.time}}.}
 #' If the score matrix is inputted to \code{bootSVD_LD}, the results can be transformed to get the PCs on the original space by multiplying each matrix \eqn{A^b} by the PCs of the original sample, \eqn{V} (see \code{\link{As2Vs}}). The bootstrap scores of the original sample are equal to \eqn{U^b D^b}.
 #' @export
-#'
+#' @importFrom utils setTxtProgressBar txtProgressBar
+#' 
 #' @examples
 #' #use small n, small B, for a quick illustration
 #' set.seed(0)
@@ -585,7 +616,7 @@ bootSVD_LD<-function(UD,DUt=t(UD),bInds=genBootIndeces(B=1000,n=dim(DUt)[2]),K,w
 #' @references
 #' Aaron Fisher, Brian Caffo, and Vadim Zipunnikov. \emph{Fast, Exact Bootstrap Principal Component Analysis for p>1 million}. 2014. http://arxiv.org/abs/1405.0922
 #'
-#' @import parallel
+#' @importFrom parallel mclapply
 #' @examples
 #' #use small n, small B, for a quick illustration
 #' set.seed(0)
@@ -624,7 +655,7 @@ As2Vs<-function(AsByB, V, pattern=NULL, ...){
 #' @return a \code{K}-length list of (\eqn{B} by \eqn{r}) matrices. If elements of \code{matricesByB} have class \code{ff}, then the returned, reordered matrices will also have class \code{ff}.
 #'
 #' @export
-#' @import ff
+#' @importFrom ff ff
 #'
 #' @examples
 #' #use small n, small B, for a quick illustration
@@ -749,7 +780,8 @@ reindexVectorsByK<-function(vectorsByB){
 #'	\item{sdVs}{a list containing element-wise bootstrap standard errors for each of the \code{K} fitted PCs, indexed by \code{k}.}
 #'	\item{momentCI}{a list of (\eqn{p} by \eqn{2}) matrices, indexed by \code{k}, where \code{momentCI[[k]][j,]} is the pointwise moment-based CI for the \eqn{j^{th}} element of the \eqn{k^{th}} PC.}
 #' @export
-#' @import ff
+#' @importFrom ff ffapply .rambytes
+#' @importFrom stats quantile var
 #' @examples
 #'
 #' #use small n, small B, for a quick illustration
@@ -799,7 +831,6 @@ getMomentsAndMomentCI<-function(AsByK,V,K=length(AsByK),verbose=FALSE){
 }
 
 
-#Note, if VsByB=NULL, it still has 
 getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsByB=NULL,verbose=getOption('verbose')){
 	{i1<-NULL; i2<- NULL} #To avoid errors in R CMD check
 	
@@ -892,7 +923,8 @@ getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsBy
 #' Aaron Fisher, Brian Caffo, and Vadim Zipunnikov. \emph{Fast, Exact Bootstrap Principal Component Analysis for p>1 million}. 2014. http://arxiv.org/abs/1405.0922
 #'
 #' @export
-#' @import ff
+#' @importFrom utils object.size
+#' @importFrom stats quantile
 #' @examples
 #' #use small n, small B, for a quick illustration
 #' set.seed(0)
@@ -900,6 +932,7 @@ getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsBy
 #' b<-bootSVD(Y, B=50, K=2, output= 
 #'  	c('initial_SVD', 'HD_moments', 'full_HD_PC_dist',
 #'  	'HD_percentiles'), verbose=interactive())
+#' b
 #' 
 #' #explore results
 #' matplot(b$initial_SVD$V[,1:4],type='l',main='Fitted PCs',lty=1)
@@ -972,7 +1005,7 @@ getHDpercentiles<-function(AsByK,V,K=length(AsByK),percentiles=c(.025,.975),VsBy
 #' 
 #' # Note that elements of full_HD_PC_dist and initial_SVD
 #' # have class 'ff'
-#' lapply(bff,function(x) class(x[[1]]))
+#' str(lapply(bff,function(x) class(x[[1]])))
 #' #Show some results of bootstrap draws
 #' plot(bff$full_HD_PC_dist[[1]][,k],type='l')
 #' #Reindexing by K will create a new set of ff files.
@@ -1137,21 +1170,43 @@ bootSVD<-function(Y=NULL,K,V=NULL,d=NULL,U=NULL,B=50,output='HD_moments',verbose
 	if(ff_data) gc()
 
 	out_contents[['timer']] <- timer
-
+	
+	class(out_contents) <- c('bootSVD','list')
 	return(out_contents)
 }
+#' @export
+print.bootSVD <- function(x, ...){
+	K <- length(x$LD_percentiles)
+	B <- length(x$d_dist)
+	cat(sprintf("Results from %d bootstrap computations of the leading %d principal components (PCs).\n", 
+            B,K))
+	
+	Kmax <- 6
+	for(k in 1:min(K,Kmax)){
+		cat(sprintf(
+		"\nMean (sd) of crossproduct of initial PC%d with bootstrap PC%ds: %f (%f).",
+		k,k,
+		x$LD_moments$EPCs[[k]][k],
+		x$LD_moments$sdPCs[[k]][k]
+		))
+	}
+	if(K>Kmax) cat('\n...\n')
+
+	invisible(x)
+}
+
+
 
 #' Quickly calculates bootstrap PCA results (wrapper for bootSVD)
 #'
 #' All arguments are passed to \code{\link{bootSVD}}. This function should be used in exactly the same way as \code{\link{bootSVD}}. The only difference is that PCA typically involves re-centering each bootstrap sample, whereas calculations involving the SVD might not.
 #'
-#' @param centerSamples whether each bootstrap sample should be centered before computing the bootstrap principal components.
-#' @param ... passed to \code{\link{bootSVD}}
+#' @param ... passed to \code{\link{bootSVD}}, with centerSamples set to TRUE.
 #' @return \code{bootSVD(...)}
 #'
 #' @export
 #' 
-bootPCA<-function( centerSamples=TRUE, ... ) bootSVD(...)
+bootPCA<-function(...) bootSVD(centerSamples=TRUE, ...)
 
 
 
